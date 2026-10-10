@@ -1,14 +1,13 @@
 #####################################################################
 # dnp_annotator.tcl - DNP 不上件快捷标注工具
-# 作者: Jerry Silicon
-# 日期: 2026-03-06
 # 描述: 选中元件后一键在 Value 属性前添加/移除 * 号标记 DNP
 #       支持 Toggle 模式、批量操作
 #####################################################################
 
 # 加载公共工具
 set scriptDir [file dirname [info script]]
-source [file join $scriptDir utils.tcl]
+source [file join $scriptDir compat.tcl]
+::OrcadTools::sourceScript [file join $scriptDir utils.tcl]
 
 namespace eval ::OrcadTools::DNP {
 
@@ -24,7 +23,8 @@ namespace eval ::OrcadTools::DNP {
     proc isDNP {partInst} {
         variable DNP_PREFIX
         set value [::OrcadTools::getPartPropValue $partInst "Value"]
-        if {[string index $value 0] eq $DNP_PREFIX} {
+        if {$DNP_PREFIX eq ""} { error "DNP prefix must not be empty." }
+        if {[string range $value 0 [expr {[string length $DNP_PREFIX] - 1}]] eq $DNP_PREFIX} {
             return 1
         }
         return 0
@@ -40,8 +40,9 @@ namespace eval ::OrcadTools::DNP {
         set refdes [::OrcadTools::getRefDes $partInst]
         set value [::OrcadTools::getPartPropValue $partInst "Value"]
 
-        if {[string index $value 0] eq $DNP_PREFIX} {
-            ::OrcadTools::log "$refdes: 已是 DNP 状态，跳过"
+        if {$DNP_PREFIX eq ""} { error "DNP prefix must not be empty." }
+        if {[string range $value 0 [expr {[string length $DNP_PREFIX] - 1}]] eq $DNP_PREFIX} {
+            ::OrcadTools::log "${refdes}: 已是 DNP 状态，跳过"
             return 0
         }
 
@@ -50,7 +51,7 @@ namespace eval ::OrcadTools::DNP {
         set result [::OrcadTools::setPartPropValue $partInst "Value" $newValue]
 
         if {$result == 0} {
-            ::OrcadTools::log "$refdes: 标记 DNP -> Value=\"$newValue\""
+            ::OrcadTools::log "${refdes}: 标记 DNP -> Value=\"$newValue\""
 
             # 可选：添加 DNP 自定义属性
             if {$ADD_DNP_PROP} {
@@ -58,7 +59,7 @@ namespace eval ::OrcadTools::DNP {
             }
             return 1
         } else {
-            ::OrcadTools::logError "$refdes: DNP 标记失败 (错误码: $result)"
+            ::OrcadTools::logError "${refdes}: DNP 标记失败 (错误码: $result)"
             return 0
         }
     }
@@ -73,17 +74,18 @@ namespace eval ::OrcadTools::DNP {
         set refdes [::OrcadTools::getRefDes $partInst]
         set value [::OrcadTools::getPartPropValue $partInst "Value"]
 
-        if {[string index $value 0] ne $DNP_PREFIX} {
-            ::OrcadTools::log "$refdes: 不是 DNP 状态，跳过"
+        if {$DNP_PREFIX eq ""} { error "DNP prefix must not be empty." }
+        if {[string range $value 0 [expr {[string length $DNP_PREFIX] - 1}]] ne $DNP_PREFIX} {
+            ::OrcadTools::log "${refdes}: 不是 DNP 状态，跳过"
             return 0
         }
 
         # 移除 * 前缀
-        set newValue [string range $value 1 end]
+        set newValue [string range $value [string length $DNP_PREFIX] end]
         set result [::OrcadTools::setPartPropValue $partInst "Value" $newValue]
 
         if {$result == 0} {
-            ::OrcadTools::log "$refdes: 取消 DNP -> Value=\"$newValue\""
+            ::OrcadTools::log "${refdes}: 取消 DNP -> Value=\"$newValue\""
 
             # 可选：移除 DNP 自定义属性
             if {$ADD_DNP_PROP} {
@@ -91,7 +93,7 @@ namespace eval ::OrcadTools::DNP {
             }
             return 1
         } else {
-            ::OrcadTools::logError "$refdes: 取消 DNP 失败 (错误码: $result)"
+            ::OrcadTools::logError "${refdes}: 取消 DNP 失败 (错误码: $result)"
             return 0
         }
     }
@@ -193,33 +195,20 @@ namespace eval ::OrcadTools::DNP {
             return
         }
 
-        set lStatus [DboState]
         set dnpList {}
-        set normalList {}
-
-        set lSchematicIter [$lDesign GetSchematicsIter $lStatus]
-        while {$lSchematicIter != "NULL"} {
-            set lSchematic $lSchematicIter
-            set lPageIter [$lSchematic GetPagesIter $lStatus]
-            while {$lPageIter != "NULL"} {
-                set lPage $lPageIter
-                set lPageName [::OrcadTools::getCString [$lPage GetName]]
-
-                set lPartInst [$lPage GetPartInstsIter $lStatus]
-                while {$lPartInst != "NULL"} {
-                    set refdes [::OrcadTools::getRefDes $lPartInst]
-                    set value [::OrcadTools::getPartPropValue $lPartInst "Value"]
-
-                    if {[isDNP $lPartInst]} {
-                        lappend dnpList [list $refdes $lPageName $value]
-                    }
-                    set lPartInst [$lPage GetPartInstsIterNext $lStatus]
+        ::OrcadTools::forEachPage $lDesign [list apply {{page pageIndex} {
+            upvar 1 dnpList dnpList
+            set name [::OrcadTools::makeCString ""]
+            $page GetName $name
+            set pageName [::OrcadTools::getCString $name]
+            ::OrcadTools::forEachPart $page [list apply {{pageName part} {
+                upvar 1 dnpList dnpList
+                if {[::OrcadTools::DNP::isDNP $part]} {
+                    lappend dnpList [list [::OrcadTools::getRefDes $part] $pageName \
+                        [::OrcadTools::getPartPropValue $part Value]]
                 }
-                set lPageIter [$lSchematic GetPagesIterNext $lStatus]
-            }
-            set lSchematicIter [$lDesign GetSchematicsIterNext $lStatus]
-        }
-
+            }} $pageName]
+        }}]
         return $dnpList
     }
 
@@ -227,6 +216,7 @@ namespace eval ::OrcadTools::DNP {
     # GUI 界面
     #---------------------------------------------------------------
     proc showGUI {} {
+        ::OrcadTools::ensureTk
         variable DNP_PREFIX
         variable ADD_DNP_PROP
 
@@ -246,15 +236,15 @@ namespace eval ::OrcadTools::DNP {
         labelframe $w.quick -text "快捷操作 (对选中元件)" -padx 10 -pady 8
         pack $w.quick -fill x -padx 10 -pady 5
 
-        button $w.quick.toggle -text "⚡ Toggle DNP (推荐)" -width 20 -height 2 \
+        button $w.quick.toggle -text "Toggle DNP (推荐)" -width 20 -height 2 \
             -command { ::OrcadTools::DNP::toggleSelectedDNP }
         pack $w.quick.toggle -pady 5
 
         frame $w.quick.btns
         pack $w.quick.btns -fill x -pady 3
-        button $w.quick.btns.mark -text "➕ 批量标记 DNP" -width 18 \
+        button $w.quick.btns.mark -text "批量标记 DNP" -width 18 \
             -command { ::OrcadTools::DNP::markSelectedDNP }
-        button $w.quick.btns.unmark -text "➖ 批量取消 DNP" -width 18 \
+        button $w.quick.btns.unmark -text "批量取消 DNP" -width 18 \
             -command { ::OrcadTools::DNP::unmarkSelectedDNP }
         pack $w.quick.btns.mark -side left -padx 5
         pack $w.quick.btns.unmark -side left -padx 5
@@ -280,7 +270,7 @@ namespace eval ::OrcadTools::DNP {
         labelframe $w.scan -text "全设计 DNP 统计" -padx 10 -pady 5
         pack $w.scan -fill both -expand 1 -padx 10 -pady 5
 
-        button $w.scan.btn -text "📊 扫描全设计 DNP 元件" -command {
+        button $w.scan.btn -text "扫描全设计 DNP 元件" -command {
             ::OrcadTools::DNP::doScanGUI
         }
         pack $w.scan.btn -pady 3

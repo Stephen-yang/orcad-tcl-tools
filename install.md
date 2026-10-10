@@ -1,113 +1,65 @@
-# OrCAD 自定义工具集 — 安装说明
+# 安装手册
 
-## 文件清单
+[English](install.en.md) · [使用说明](usage.md) · [验证与兼容性](README.md)
 
-| 文件 | 说明 |
-|------|------|
-| `utils.tcl` | 公共工具函数 |
-| `show_properties.tcl` | 工具一：显示封装/耐压属性 |
-| `bulk_replace_part.tcl` | 工具二：批量物料替换 |
-| `dnp_annotator.tcl` | 工具三：DNP 不上件标注 |
-| `orcad_tools_menu.tcl` | 统一菜单入口 |
+## 手动加载
 
-## 安装步骤
+首次验证推荐手动加载。解压后保留以下文件同目录、原始 UTF-8 编码：compat.tcl、utils.tcl、show_properties.tcl、bulk_replace_part.tcl、dnp_annotator.tcl、orcad_tools_menu.tcl。
 
-### 方式一：自动加载（推荐）
-
-1. 找到 OrCAD 17.2 安装目录，例如：
-   ```
-   C:\Cadence\SPB_17.2\tools\capture\tclscripts\
-   ```
-
-2. 在该目录下找到或创建 `capAutoLoad` 文件夹：
-   ```
-   C:\Cadence\SPB_17.2\tools\capture\tclscripts\capAutoLoad\
-   ```
-
-3. 将所有 `.tcl` 文件复制到此目录：
-   ```
-   capAutoLoad\
-     ├── utils.tcl
-     ├── show_properties.tcl
-     ├── bulk_replace_part.tcl
-     ├── dnp_annotator.tcl
-     └── orcad_tools_menu.tcl
-   ```
-
-4. 重启 OrCAD Capture，工具将自动加载并出现在菜单中
-
-### 方式二：手动加载
-
-1. 将所有文件放在任意目录，如 `D:\orcad_tcl_tools\`
-
-2. 打开 OrCAD Capture
-
-3. 打开 TCL Command Window：**View → Command Window**
-
-4. 执行以下命令：
-   ```tcl
-   source "D:/orcad_tcl_tools/orcad_tools_menu.tcl"
-   ```
-   > 注意：路径使用正斜杠 `/` 或双反斜杠 `\\`
-
-### 方式三：startup.tcl 自动执行
-
-1. 编辑 `$CDSROOT\tools\capture\tclscripts\capinit.tcl`
-
-2. 在文件末尾添加：
-   ```tcl
-   source "D:/orcad_tcl_tools/orcad_tools_menu.tcl"
-   ```
-
-## 使用方法
-
-### 工具一：显示封装/耐压属性
-- **菜单**：自定义工具 → 显示封装/耐压属性
-- **命令**：在 TCL 窗口输入 `ShowProperties`
-- **操作**：选择要显示的属性 → 选择范围（选中/当前页/全部） → 执行
-
-### 工具二：批量物料替换
-- **菜单**：自定义工具 → 批量物料替换
-- **命令**：在 TCL 窗口输入 `BulkReplace`
-- **操作**：选择匹配模式 → 输入旧/新物料值 → 扫描 → 确认 → 替换
-
-### 工具三：DNP 不上件标注
-- **菜单**：自定义工具 → DNP 不上件标注
-- **命令**：在 TCL 窗口输入 `DNPTool`（打开面板）或 `DNPToggle`（直接 Toggle）
-- **操作**：选中元件 → 点击 Toggle 按钮 → Value 前自动加/去 `*`
-
-## 自定义配置
-
-### 修改要显示的属性名
-
-如果你的 CIS 数据库中属性名不同，编辑 `show_properties.tcl` 第 15 行：
+打开 Capture → View → Command Window。以下是通用示例路径，必须替换为实际解压位置：
 
 ```tcl
-variable PROP_LIST {
-    "PCB Footprint"      ;# 改为你的封装属性名
-    "VOLTAGE_RATING"     ;# 改为你的耐压属性名
-}
+source -encoding utf-8 "D:/orcad-tcl-tools/orcad_tools_menu.tcl"
 ```
 
-常见属性名对照：
-| 含义 | 可能的属性名 |
-|------|-------------|
-| 封装 | `PCB Footprint`, `Footprint`, `PCB_FP` |
-| 耐压 | `VOLTAGE_RATING`, `Voltage`, `Max_Voltage`, `Working Voltage` |
+不要加 `tcl` 或 `Capture>`。路径使用正斜杠并保留双引号。菜单为 **OrCAD Tools**，也可输入 ShowProperties、BulkReplace、DNPTool。运行需要 Capture 数据库接口及可加载的 Tk，不需要 Python。
 
-### 修改 DNP 前缀符号
+## 自动加载
 
-编辑 `dnp_annotator.tcl` 第 14 行：
+在实际安装目录找到 `<Capture安装根目录>/tools/capture/tclscripts/capAutoLoad/`，部署为：
+
+```text
+capAutoLoad/
+  orcad_tools_autoload.tcl
+  orcad-tcl-tools/
+    compat.tcl
+    utils.tcl
+    show_properties.tcl
+    bulk_replace_part.tcl
+    dnp_annotator.tcl
+    orcad_tools_menu.tcl
+```
+
+ASCII 引导文件显式用 UTF-8 加载子目录入口。不要把全部模块放在顶层，以免 Capture 用系统编码重复加载。需安装目录写权限。重启后检查日志、菜单和三个面板；自动加载尚待完整实机验收。
+
+## 更新和卸载
+
+关闭面板后一起替换全部脚本，再重启；临时验证可重新 source 入口并打开面板。部分默认设置会恢复，需重查勾选项、显示模式、DNP 前缀。
+
+卸载时关闭 Capture，移除引导文件和工具子目录，再启动。手动加载模式重启后不再 source 即可。卸载不会还原已修改的原理图属性或文字位置。
+
+## 故障排查
+
+| 报错 / 现象 | 处理 |
+|---|---|
+| invalid command name "tcl" | 不加 tcl 前缀 |
+| couldn't read file | 使用实际解压路径，示例目录不会自动创建 |
+| 缺少 winfo | 加载全部新版文件；Tk 按需初始化 |
+| Tk could not be loaded | 检查 Capture 自带 Tcl/Tk 与 auto_path，不用独立 Python Tk 替代 |
+| 菜单未出现 | 看日志；初始化后执行 RegisterOrcadToolsMenu 或用快捷命令 |
+| 中文乱码 | 保留 UTF-8，显式指定 source 编码，不改全局 encoding system |
+| Invalid method | 关闭面板重载新版，收集完整 errorInfo 堆栈 |
+| 空白 tk 窗口 | 新版隐藏工具初始化的根窗口；旧会话可 wm withdraw .，但先确认未用于其他工具 |
+
+17.2 S079 繁中环境曾通过转 Big5 缓解乱码，但不能修复菜单和 Tk 问题。推荐重新使用原始 UTF-8。若全部非 ASCII 脚本确实转为 Big5，手动执行：
 
 ```tcl
-variable DNP_PREFIX "*"   ;# 改为你需要的前缀
+namespace eval ::OrcadTools { variable SCRIPT_ENCODING big5 }
+source -encoding big5 "D:/orcad-tcl-tools/orcad_tools_menu.tcl"
 ```
 
-## 故障排除
+不要混合编码；默认自动引导只用于 UTF-8。Big5 不一定保留全部简体字及符号，17.2 仍待实机复测。
 
-| 问题 | 解决方案 |
-|------|---------|
-| 菜单未出现 | 检查 Command Window 是否有加载错误信息 |
-| 属性不显示 | 确认属性名拼写与 CIS 数据库一致 |
-| 替换后位号变化 | 工具只修改属性值，不会改变 REFDES |
-| TCL 错误 | 在 Command Window 中查看详细错误信息 |
+## 验收
+
+用设计副本按使用说明逐项验证。不要把时间戳、Error 输出当命令输入。对外分享日志前移除设计相关信息。

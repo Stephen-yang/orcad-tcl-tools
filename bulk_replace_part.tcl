@@ -1,14 +1,13 @@
 #####################################################################
 # bulk_replace_part.tcl - 批量物料替换工具
-# 作者: Jerry Silicon
-# 日期: 2026-03-06
 # 描述: 一键将原理图中所有相同物料（Value 或 Part Number）
 #       替换为新的物料，保留 REFDES 和位置
 #####################################################################
 
 # 加载公共工具
 set scriptDir [file dirname [info script]]
-source [file join $scriptDir utils.tcl]
+source [file join $scriptDir compat.tcl]
+::OrcadTools::sourceScript [file join $scriptDir utils.tcl]
 
 namespace eval ::OrcadTools::BulkReplace {
 
@@ -17,7 +16,7 @@ namespace eval ::OrcadTools::BulkReplace {
 
     #---------------------------------------------------------------
     # 扫描全设计，查找匹配的元件
-    # matchProp: 匹配的属性名 (Value / Part Number)
+    # matchProp: 匹配的属性名 (Value / Part Number / PCB Footprint)
     # matchValue: 要匹配的值
     # 返回: {refdes page propValue} 的列表
     #---------------------------------------------------------------
@@ -26,31 +25,19 @@ namespace eval ::OrcadTools::BulkReplace {
         if {$lDesign == "NULL"} { return {} }
 
         set results {}
-        set lStatus [DboState]
-
-        # 遍历所有页面
-        set lSchematicIter [$lDesign GetSchematicsIter $lStatus]
-        while {$lSchematicIter != "NULL"} {
-            set lSchematic $lSchematicIter
-            set lPageIter [$lSchematic GetPagesIter $lStatus]
-            while {$lPageIter != "NULL"} {
-                set lPage $lPageIter
-                set lPageName [::OrcadTools::getCString [$lPage GetName]]
-
-                # 遍历元件
-                set lPartInst [$lPage GetPartInstsIter $lStatus]
-                while {$lPartInst != "NULL"} {
-                    set propVal [::OrcadTools::getPartPropValue $lPartInst $matchProp]
-                    if {$propVal eq $matchValue} {
-                        set refdes [::OrcadTools::getRefDes $lPartInst]
-                        lappend results [list $refdes $lPageName $propVal $lPartInst]
-                    }
-                    set lPartInst [$lPage GetPartInstsIterNext $lStatus]
+        ::OrcadTools::forEachPage $lDesign [list apply {{matchProp matchValue page pageIndex} {
+            upvar 1 results results
+            set name [::OrcadTools::makeCString ""]
+            $page GetName $name
+            set pageName [::OrcadTools::getCString $name]
+            ::OrcadTools::forEachPart $page [list apply {{matchProp matchValue pageName part} {
+                upvar 1 results results
+                set value [::OrcadTools::getPartPropValue $part $matchProp]
+                if {$value eq $matchValue} {
+                    lappend results [list [::OrcadTools::getRefDes $part] $pageName $value $part]
                 }
-                set lPageIter [$lSchematic GetPagesIterNext $lStatus]
-            }
-            set lSchematicIter [$lDesign GetSchematicsIterNext $lStatus]
-        }
+            }} $matchProp $matchValue $pageName]
+        }} $matchProp $matchValue]
         return $results
     }
 
@@ -83,11 +70,14 @@ namespace eval ::OrcadTools::BulkReplace {
             set pageName [lindex $item 1]
             set partInst [lindex $item 3]
 
-            set result [::OrcadTools::setPartPropValue $partInst $replaceProp $newValue]
-            if {$result == 0} {
+            set failed [catch {
+                set result [::OrcadTools::setPartPropValue $partInst $replaceProp $newValue]
+            } reason]
+            if {$failed} { set result $reason }
+            if {!$failed && $result == 0} {
                 incr successCount
                 lappend replaceLog [list $refdes $pageName $oldValue $newValue "成功"]
-                ::OrcadTools::log "$refdes ($pageName): $replaceProp \"$oldValue\" -> \"$newValue\" [成功]"
+                ::OrcadTools::log "$refdes ($pageName): $replaceProp \"$oldValue\" -> \"$newValue\" 成功"
             } else {
                 incr failCount
                 lappend replaceLog [list $refdes $pageName $oldValue $newValue "失败"]
@@ -122,6 +112,7 @@ namespace eval ::OrcadTools::BulkReplace {
     # GUI 界面
     #---------------------------------------------------------------
     proc showGUI {} {
+        ::OrcadTools::ensureTk
         set w .bulkReplaceGUI
         if {[winfo exists $w]} {
             wm deiconify $w
@@ -131,7 +122,7 @@ namespace eval ::OrcadTools::BulkReplace {
 
         toplevel $w
         wm title $w "批量物料替换"
-        wm geometry $w 500x480
+        wm geometry $w 500x510
         wm resizable $w 0 0
 
         # === 匹配模式 ===
@@ -143,8 +134,11 @@ namespace eval ::OrcadTools::BulkReplace {
             -variable ::OrcadTools::BulkReplace::matchMode -value "Value"
         radiobutton $w.mode.r2 -text "按 Part Number 匹配 (如: CL05A104KP5NNNC)" \
             -variable ::OrcadTools::BulkReplace::matchMode -value "Part Number"
+        radiobutton $w.mode.r3 -text "按 PCB Footprint 匹配 (如: CC0805)" \
+            -variable ::OrcadTools::BulkReplace::matchMode -value "PCB Footprint"
         pack $w.mode.r1 -anchor w
         pack $w.mode.r2 -anchor w
+        pack $w.mode.r3 -anchor w
 
         # === 输入区 ===
         labelframe $w.input -text "替换参数" -padx 10 -pady 5
@@ -168,13 +162,13 @@ namespace eval ::OrcadTools::BulkReplace {
         frame $w.buttons
         pack $w.buttons -fill x -padx 10 -pady 5
 
-        button $w.buttons.scan -text "🔍 扫描匹配" -width 15 -command {
+        button $w.buttons.scan -text "扫描匹配" -width 15 -command {
             ::OrcadTools::BulkReplace::doScan
         }
-        button $w.buttons.replace -text "✏️ 执行替换" -width 15 -command {
+        button $w.buttons.replace -text "执行替换" -width 15 -command {
             ::OrcadTools::BulkReplace::doReplace
         }
-        button $w.buttons.export -text "📄 导出日志" -width 15 -command {
+        button $w.buttons.export -text "导出日志" -width 15 -command {
             ::OrcadTools::BulkReplace::doExport
         }
 

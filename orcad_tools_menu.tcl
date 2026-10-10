@@ -1,7 +1,6 @@
+source [file join [file dirname [info script]] compat.tcl]
 #####################################################################
 # orcad_tools_menu.tcl - 统一菜单集成入口
-# 作者: Jerry Silicon
-# 日期: 2026-03-06
 # 描述: 将所有自定义 TCL 工具注册到 OrCAD Capture 菜单中
 #       放置到 $CDSROOT\tools\capture\tclscripts\capAutoLoad\ 目录
 #       即可在 Capture 启动时自动加载
@@ -25,7 +24,7 @@ proc ::LoadOrcadTools {} {
     foreach tool $tools {
         set toolPath [file join $toolDir $tool]
         if {[file exists $toolPath]} {
-            source $toolPath
+            ::OrcadTools::sourceScript $toolPath
             puts "  ✓ 已加载: $tool"
         } else {
             puts "  ✗ 未找到: $toolPath"
@@ -36,72 +35,68 @@ proc ::LoadOrcadTools {} {
 # ---------------------------------------------------------------
 # 注册自定义菜单
 # ---------------------------------------------------------------
-proc ::RegisterOrcadToolsMenu {} {
-    # 方式一：使用 InsertXMLMenu（推荐，兼容性好）
-    # 需要先创建 XML 菜单描述文件
-
-    # 方式二：使用 capTCLMenu 方式添加菜单
-    # 以下是通过 TCL 命令直接添加菜单项
-
-    set menuXML {
-<Menu>
-    <popup name="自定义工具(&T)">
-        <menuitem name="显示封装/耐压属性..." command="ShowProperties"/>
-        <separator/>
-        <menuitem name="批量物料替换..." command="BulkReplace"/>
-        <separator/>
-        <popup name="DNP 不上件标注">
-            <menuitem name="DNP 工具面板..." command="DNPTool"/>
-            <separator/>
-            <menuitem name="Toggle DNP (选中元件)" command="DNPToggle"/>
-            <menuitem name="标记 DNP (选中元件)" command="DNPMark"/>
-            <menuitem name="取消 DNP (选中元件)" command="DNPUnmark"/>
-        </popup>
-        <separator/>
-        <menuitem name="关于自定义工具..." command="::ShowAboutOrcadTools"/>
-    </popup>
-</Menu>
-    }
-
-    # 将 XML 写入临时文件
-    set xmlFile [file join $::OrcadToolsDir "_menu_temp.xml"]
-    set f [open $xmlFile w]
-    puts $f $menuXML
-    close $f
-
-    # 尝试插入菜单
-    if {[catch {InsertXMLMenu $xmlFile} err]} {
-        puts "警告: InsertXMLMenu 失败，尝试备用方式: $err"
-        # 备用方式：使用 capAddMenu
-        catch {
-            # 如果 InsertXMLMenu 不可用，提供手动菜单说明
-            puts ""
-            puts "========================================="
-            puts "  请手动添加菜单或使用以下快捷命令:"
-            puts "========================================="
-            puts "  ShowProperties  - 显示封装/耐压属性"
-            puts "  BulkReplace     - 批量物料替换"
-            puts "  DNPTool         - DNP 标注面板"
-            puts "  DNPToggle       - Toggle DNP (选中元件)"
-            puts "========================================="
+# Keep successful registrations across repeated sourcing; failed steps can retry.
+namespace eval ::OrcadTools::Menu {
+    if {![info exists installed]} { variable installed {} }
+    proc enabled {args} { return 1 }
+    proc invoke {command args} { uplevel #0 [list $command] }
+    proc once {key script} {
+        variable installed
+        if {[lsearch -exact $installed $key] < 0} {
+            uplevel #0 $script
+            lappend installed $key
         }
     }
+}
 
-    # 清理临时文件
-    catch { file delete $xmlFile }
+proc ::RegisterOrcadToolsMenu {} {
+    foreach command {InsertXMLMenu RegisterAction} {
+        if {![llength [info commands ::$command]]} {
+            puts "OrCAD Tools: $command unavailable. Use ShowProperties, BulkReplace, DNPTool, DNPToggle, DNPMark, DNPUnmark; retry RegisterOrcadToolsMenu after Capture initialization."
+            return 0
+        }
+    }
+    if {[catch {
+        ::OrcadTools::Menu::once update {
+            RegisterAction OrcadToolsUpdate ::OrcadTools::Menu::enabled "" ::OrcadTools::Menu::enabled ""
+        }
+        # ASCII menu labels avoid Capture 17.2 native menu code-page conversion.
+        ::OrcadTools::Menu::once root {
+            InsertXMLMenu [list [list OrcadToolsMenu] "" "" [list popup "OrCAD &Tools" "" "" "" "" ""] ""]
+        }
+        ::OrcadTools::Menu::once dnp {
+            InsertXMLMenu [list [list OrcadToolsMenu DNP] "" "" [list popup "DNP" "" "" "" "" ""] ""]
+        }
+        foreach {command label parent} {
+            ShowProperties "Show Footprint / Voltage..." OrcadToolsMenu
+            BulkReplace "Bulk Replace..." OrcadToolsMenu
+            DNPTool "DNP Panel..." {OrcadToolsMenu DNP}
+            DNPToggle "Toggle DNP (selection)" {OrcadToolsMenu DNP}
+            DNPMark "Mark DNP (selection)" {OrcadToolsMenu DNP}
+            DNPUnmark "Unmark DNP (selection)" {OrcadToolsMenu DNP}
+            ShowAboutOrcadTools "About OrCAD Tools..." OrcadToolsMenu
+        } {
+            set action OrcadTools_$command
+            ::OrcadTools::Menu::once action_$command [list RegisterAction $action ::OrcadTools::Menu::enabled "" [list ::OrcadTools::Menu::invoke ::$command] ""]
+            ::OrcadTools::Menu::once menu_$command [list InsertXMLMenu [list [concat $parent [list $command]] "" "" [list action $label 0 $action OrcadToolsUpdate "" "" "" $label] ""]]
+        }
+    } reason]} {
+        puts "OrCAD Tools: menu registration failed: $reason. Command shortcuts remain available; retry RegisterOrcadToolsMenu."
+        return 0
+    }
+    return 1
 }
 
 # ---------------------------------------------------------------
 # 关于信息
 # ---------------------------------------------------------------
 proc ::ShowAboutOrcadTools {} {
+    ::OrcadTools::ensureTk
     set msg "OrCAD 自定义工具集 v1.0.0\n\n"
     append msg "包含工具:\n"
     append msg "  1. 属性显示 (封装/耐压)\n"
     append msg "  2. 批量物料替换\n"
     append msg "  3. DNP 不上件标注\n\n"
-    append msg "作者: Jerry Silicon\n"
-    append msg "日期: 2026-03-06\n\n"
     append msg "快捷命令:\n"
     append msg "  ShowProperties / BulkReplace\n"
     append msg "  DNPTool / DNPToggle / DNPMark / DNPUnmark"

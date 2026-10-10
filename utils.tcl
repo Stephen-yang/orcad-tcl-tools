@@ -1,7 +1,6 @@
+source [file join [file dirname [info script]] compat.tcl]
 #####################################################################
 # utils.tcl - OrCAD Capture 17.2 CIS TCL 公共工具函数
-# 作者: Jerry Silicon
-# 日期: 2026-03-06
 # 描述: 提供字符串转换、设计遍历、日志等公共功能
 #####################################################################
 
@@ -39,13 +38,16 @@ namespace eval ::OrcadTools {
     # 获取当前活动设计
     #---------------------------------------------------------------
     proc getActiveDesign {} {
-        set lStatus [DboState]
-        set lSession [DboSession_sGetSessionInstance]
+        if {![info exists ::DboSession_s_pDboSession]} {
+            error "OrCAD Tools: Capture session variable DboSession_s_pDboSession is unavailable."
+        }
+        set lSession $::DboSession_s_pDboSession
         if {$lSession == "NULL"} {
             logError "无法获取 Session 实例"
             return "NULL"
         }
-        set lDesign [$lSession GetActiveDesign $lStatus]
+        DboSession -this $lSession
+        set lDesign [$lSession GetActiveDesign]
         if {$lDesign == "NULL"} {
             logError "没有打开的设计文件"
             return "NULL"
@@ -60,18 +62,27 @@ namespace eval ::OrcadTools {
     proc forEachPage {design callback} {
         set lStatus [DboState]
         set pageIndex 0
-        set lSchematicIter [$design GetSchematicsIter $lStatus]
-        while {$lSchematicIter != "NULL"} {
-            set lSchematic $lSchematicIter
-            set lPageIter [$lSchematic GetPagesIter $lStatus]
-            while {$lPageIter != "NULL"} {
-                set lPage $lPageIter
-                $callback $lPage $pageIndex
-                incr pageIndex
-                set lPageIter [$lSchematic GetPagesIterNext $lStatus]
+        set views [$design NewViewsIter $lStatus $::IterDefs_SCHEMATICS]
+        set pages NULL
+        set code [catch {
+            set view [$views NextView $lStatus]
+            while {$view ne "NULL"} {
+                set schematic [DboViewToDboSchematic $view]
+                set pages [$schematic NewPagesIter $lStatus]
+                set page [$pages NextPage $lStatus]
+                while {$page ne "NULL"} {
+                    uplevel 1 [concat $callback [list $page $pageIndex]]
+                    incr pageIndex
+                    set page [$pages NextPage $lStatus]
+                }
+                delete_DboSchematicPagesIter $pages
+                set pages NULL
+                set view [$views NextView $lStatus]
             }
-            set lSchematicIter [$design GetSchematicsIterNext $lStatus]
-        }
+        } result options]
+        if {$pages ne "NULL"} { delete_DboSchematicPagesIter $pages }
+        delete_DboLibViewsIter $views
+        if {$code} { return -options $options $result }
         return $pageIndex
     }
 
@@ -82,12 +93,17 @@ namespace eval ::OrcadTools {
     proc forEachPart {page callback} {
         set lStatus [DboState]
         set count 0
-        set lPartInst [$page GetPartInstsIter $lStatus]
-        while {$lPartInst != "NULL"} {
-            $callback $lPartInst
-            incr count
-            set lPartInst [$page GetPartInstsIterNext $lStatus]
-        }
+        set iter [$page NewPartInstsIter $lStatus]
+        set code [catch {
+            set lPartInst [$iter NextPartInst $lStatus]
+            while {$lPartInst != "NULL"} {
+                uplevel 1 [concat $callback [list $lPartInst]]
+                incr count
+                set lPartInst [$iter NextPartInst $lStatus]
+            }
+        } result options]
+        delete_DboPagePartInstsIter $iter
+        if {$code} { return -options $options $result }
         return $count
     }
 
@@ -95,53 +111,46 @@ namespace eval ::OrcadTools {
     # 获取元件的属性值
     #---------------------------------------------------------------
     proc getPartPropValue {partInst propName} {
-        set lStatus [DboState]
         set lCStr [makeCString ""]
         set lPropCStr [makeCString $propName]
-        set lResult [$partInst GetEffectivePropStringValue $lPropCStr $lCStr]
-        if {$lResult == 0} {
-            return [getCString $lCStr]
-        }
-        return ""
+        # The return is a DboState wrapper, not an integer success code.
+        # The actual property value is written into the output CString.
+        $partInst GetEffectivePropStringValue $lPropCStr $lCStr
+        return [getCString $lCStr]
     }
 
     #---------------------------------------------------------------
     # 设置元件的属性值
     #---------------------------------------------------------------
     proc setPartPropValue {partInst propName newValue} {
-        set lStatus [DboState]
         set lPropCStr [makeCString $propName]
         set lValCStr [makeCString $newValue]
-        set lResult [$partInst SetEffectivePropStringValue $lPropCStr $lValCStr $lStatus]
-        return $lResult
+        set state [$partInst SetEffectivePropStringValue $lPropCStr $lValCStr]
+        # Keep the tools' existing 0=success contract.
+        return [expr {![$state OK]}]
     }
 
     #---------------------------------------------------------------
     # 获取元件的 REFDES
     #---------------------------------------------------------------
     proc getRefDes {partInst} {
-        return [getPartPropValue $partInst "Reference"]
+        set value [makeCString ""]
+        $partInst GetReferenceDesignator $value
+        return [getCString $value]
     }
 
     #---------------------------------------------------------------
     # 获取当前选中的对象列表
     #---------------------------------------------------------------
     proc getSelectedParts {} {
-        set lStatus [DboState]
-        set lDesign [getActiveDesign]
-        if {$lDesign == "NULL"} { return {} }
-
         set selectedParts {}
-        set lSelIter [$lDesign GetSelectedObjectsIter $lStatus]
-        while {$lSelIter != "NULL"} {
-            set lObj $lSelIter
+        foreach lObj [GetSelectedObjects] {
+            if {$lObj eq "NULL" || $lObj eq ""} { continue }
             # 检查是否为 PartInst 类型
             set lObjType [$lObj GetObjectType]
-            if {$lObjType == 26} {
-                # 26 = DboPartInst
+            if {$lObjType == $::DboBaseObject_PLACED_INSTANCE} {
                 lappend selectedParts $lObj
             }
-            set lSelIter [$lDesign GetSelectedObjectsIterNext $lStatus]
         }
         return $selectedParts
     }
@@ -150,14 +159,17 @@ namespace eval ::OrcadTools {
     # 弹出简单消息框
     #---------------------------------------------------------------
     proc msgBox {title message {type "ok"}} {
+        ::OrcadTools::ensureTk
         tk_messageBox -title $title -message $message -type $type -icon info
     }
 
     proc msgBoxWarn {title message} {
+        ::OrcadTools::ensureTk
         tk_messageBox -title $title -message $message -type ok -icon warning
     }
 
     proc msgBoxConfirm {title message} {
+        ::OrcadTools::ensureTk
         return [tk_messageBox -title $title -message $message -type yesno -icon question]
     }
 }

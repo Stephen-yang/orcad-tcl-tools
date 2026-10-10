@@ -255,10 +255,10 @@ Candidate compatibility is an inference, not vendor certification. References: [
 
 BulkReplace edits Value, Part Number or PCB Footprint only. It does not perform complete CIS relinking or database synchronization. The experimental CIS entry was removed. Occurrence overrides may differ from instance properties; inspect both. DNP prefixes and properties do not control CIS Variant fitted status.
 
-## Distribution and privacy
+## Downloads and documentation
 
-The allowlisted ZIP contains runtime scripts, bilingual docs and LICENSE only. It excludes Git history, tests, screenshots, designs, databases, diagnostics, logs, caches and actual machine paths. Paths and sample values in docs are generic examples. ZIP timestamps are fixed with no extra local metadata.
+Download the package from repository Releases. See [Installation](install.en.md), [User guide](usage.en.md) and [Release Notes](RELEASE_NOTES.en.md). Python is not required to run the tools.
 
-Personal bylines were removed from scripts and About. The original MIT copyright notice remains in LICENSE as required. This is not an attribution-free license copy. Runtime logs and CSV exports can contain real references, page names and properties; inspect them before sharing.
+## License
 
-Developer tests: `python -m unittest discover -s tests -v` (Python + tkinter). Build: `python tools/build_release.py`. Python is not required to run the tools. [MIT](LICENSE).
+This project uses the [MIT License](LICENSE).

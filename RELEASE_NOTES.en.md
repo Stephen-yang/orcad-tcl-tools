@@ -46,6 +46,6 @@ Use RepositionProperties explicitly to repair old positions; updates do not auto
 
 Layout does not detect collisions with parts or wires. Check occurrence overrides separately. Undo, actual bulk writes, CSV export, menu clicks and autoload still need full Capture acceptance testing. CSV uses simple comma separation. DNP does not automatically manage CIS Variants or BOM exclusion.
 
-## Documentation and distribution
+## Documentation
 
-Rewritten Chinese and English installation and user guides distinguish validated features from compatibility candidates. The allowlisted package includes runtime scripts, docs and LICENSE only, excluding real paths, project data, screenshots, logs, tests, caches and Git history. Personal script/About bylines removed; mandatory MIT copyright retained. Experimental CIS relinking is not included.
+Updated Chinese and English README files, installation instructions and user guides with complete workflows, examples, troubleshooting and version validation scope. The package is available from repository Releases.

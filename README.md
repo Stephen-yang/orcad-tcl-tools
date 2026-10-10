@@ -257,10 +257,10 @@ DNP 不删除元件，不自动改变 CIS Variant 装配状态，也不自动从
 
 批量替换仅修改 Value、Part Number 或 PCB Footprint 属性；不完整换料、不同步 CIS 数据库。实验性 CIS 入口已撤销。Occurrence 覆盖可能与 instance 属性不同，需核对。DNP 前缀和属性不控制 CIS Variant 装配状态。
 
-## 发布与隐私
+## 下载与文档
 
-ZIP 白名单只包含运行脚本、中英文文档和 LICENSE，排除 Git 历史、测试、截图、设计、数据库、诊断、日志、缓存和真实机器路径。文档中的路径与数据为通用示例。ZIP 固定时间戳，无本机额外元数据。
+请从仓库 Releases 下载发布包。安装步骤见 [安装手册](install.md)，详细操作见 [使用说明](usage.md)，更新内容见 [Release Notes](RELEASE_NOTES.md)。使用工具不需要 Python。
 
-脚本及 About 个人署名已移除；MIT 要求的原始版权声明保留于 LICENSE。发布包不含个人运行数据，但不是移除版权归属的匿名许可副本。运行日志和导出 CSV 可能包含实际位号、页面及属性，分享前请检查。
+## 许可证
 
-开发测试：`python -m unittest discover -s tests -v`（Python + tkinter）。打包：`python tools/build_release.py`。使用工具不需要 Python。[MIT](LICENSE)。
+本项目采用 [MIT License](LICENSE)。
